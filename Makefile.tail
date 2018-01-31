@@ -26,8 +26,14 @@ LOCAL_LIBS =	$(LIVEMEDIA_LIB) $(GROUPSOCK_LIB) \
 		$(BASIC_USAGE_ENVIRONMENT_LIB) $(USAGE_ENVIRONMENT_LIB)
 LIBS =			$(LOCAL_LIBS)
 
-live555ProxyServerEx$(EXE): $(PROXY_SERVER_OBJ)
-	$(LINK)$@ $(CONSOLE_LINK_OPTS) $(PROXY_SERVER_OBJ) $(LIBS)
+inih/ini.$(OBJ):
+	$(CPLUSPLUS_COMPILER) -c $(CPLUSPLUS_FLAGS) inih/ini.$(C) -o inih/ini.$(OBJ)
+
+inih/INIReader.$(OBJ):
+	$(CPLUSPLUS_COMPILER) -c $(CPLUSPLUS_FLAGS) inih/INIReader.$(CPP) -o inih/INIReader.$(OBJ)
+
+live555ProxyServerEx$(EXE): inih/ini.$(OBJ) inih/INIReader.$(OBJ) $(PROXY_SERVER_OBJ)
+	$(LINK)$@ $(CONSOLE_LINK_OPTS) inih/ini.$(OBJ) inih/INIReader.$(OBJ) $(PROXY_SERVER_OBJ) $(LIBS)
 
 clean:
 	-rm -rf *.$(OBJ) */*.$(OBJ) $(ALL) core *.core *~ include/*~

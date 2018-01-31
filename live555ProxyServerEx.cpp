@@ -25,6 +25,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #include <algorithm>
 #include "liveMedia.hh"
 #include "BasicUsageEnvironment.hh"
+#include "inih/INIReader.hh"
 
 struct ProxyStream {
   std::string proxiedURL;
