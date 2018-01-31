@@ -47,15 +47,19 @@ int verbosityLevel = 0;
 Boolean streamRTPOverTCP = False;
 portNumBits tunnelOverHTTPPortNum = 0;
 portNumBits rtspServerPortNum = 554;
-char* username = NULL;
-char* password = NULL;
+std::string username;
+std::string password;
 Boolean proxyREGISTERRequests = False;
-char* usernameForREGISTER = NULL;
-char* passwordForREGISTER = NULL;
+std::string usernameForREGISTER;
+std::string passwordForREGISTER;
 
 static RTSPServer* createRTSPServer(Port port) {
   if (proxyREGISTERRequests) {
-    return RTSPServerWithREGISTERProxying::createNew(*env, port, authDB, authDBForREGISTER, 65, streamRTPOverTCP, verbosityLevel, username, password);
+    return RTSPServerWithREGISTERProxying::createNew(
+      *env, port, authDB, authDBForREGISTER, 65,
+      streamRTPOverTCP, verbosityLevel,
+      username.length() > 0 ? username.c_str() : NULL,
+      password.length() > 0 ? password.c_str() : NULL);
   } else {
     return RTSPServer::createNew(*env, port, authDB);
   }
@@ -132,19 +136,19 @@ int parseArgs(int argc, char** argv) {
     
     case 'u': { // specify a username and password (to be used if the 'back end' (i.e., proxied) stream requires authentication)
       if (pos + 2 >= argc) return -1; // there's no argv[pos + 2] (for the "password")
-      username = argv[pos + 1];
-      password = argv[pos + 2];
+      username = std::string(argv[pos + 1]);
+      password = std::string(argv[pos + 2]);
       pos += 2;
       break;
     }
 
     case 'U': { // specify a username and password to use to authenticate incoming "REGISTER" commands
       if (pos + 2 >= argc) return -1; // there's no argv[pos + 2] (for the "password")
-      usernameForREGISTER = argv[pos + 1];
-      passwordForREGISTER = argv[pos + 2];
+      usernameForREGISTER = std::string(argv[pos + 1]);
+      passwordForREGISTER = std::string(argv[pos + 2]);
 
       if (authDBForREGISTER == NULL) authDBForREGISTER = new UserAuthenticationDatabase;
-      authDBForREGISTER->addUserRecord(usernameForREGISTER, passwordForREGISTER);
+      authDBForREGISTER->addUserRecord(usernameForREGISTER.c_str(), passwordForREGISTER.c_str());
       pos += 2;
       break;
     }
@@ -189,8 +193,8 @@ bool parseURLs(int argc, char** argv, int urlsStartPos) {
     ProxyStream stream;
     stream.proxiedURL = std::string(argv[urlsStartPos]);
     stream.streamName = cppStreamName;
-    stream.username = std::string(username != NULL ? username : "");
-    stream.password = std::string(password != NULL ? password : "");
+    stream.username = username;
+    stream.password = password;
     stream.tunnelOverHTTPPortNum = tunnelOverHTTPPortNum;
     streams.push_back(stream);
     streamNames.push_back(cppStreamName);
