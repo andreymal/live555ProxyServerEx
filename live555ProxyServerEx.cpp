@@ -20,6 +20,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 // LIVE555 Proxy Server Ex
 // main program
 
+#include <sstream>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -43,16 +44,19 @@ UserAuthenticationDatabase* authDBForREGISTER = NULL;
 std::vector<ProxyStream> streams;
 std::vector<std::string> streamNames; // for collision detection
 
-// Default values of command-line parameters:
+// Global configuration
 int verbosityLevel = 0;
 Boolean streamRTPOverTCP = False;
-portNumBits tunnelOverHTTPPortNum = 0;
 portNumBits rtspServerPortNum = 554;
-std::string username;
-std::string password;
 Boolean proxyREGISTERRequests = False;
 std::string usernameForREGISTER;
 std::string passwordForREGISTER;
+
+// Configuration for command-line streams
+std::string username;
+std::string password;
+portNumBits tunnelOverHTTPPortNum = 0;
+
 
 static RTSPServer* createRTSPServer(Port port) {
   if (proxyREGISTERRequests) {
@@ -68,6 +72,7 @@ static RTSPServer* createRTSPServer(Port port) {
 
 void usage() {
   *env << "Usage: " << progName
+       << " [-c <config-file>]"
        << " [-v|-V]"
        << " [-t|-T <http-port>]"
        << " [-p <rtspServer-port>]"
@@ -75,6 +80,83 @@ void usage() {
        << " [-R] [-U <username-for-REGISTER> <password-for-REGISTER>]"
        << " <rtsp-url-1> ... <rtsp-url-n>\n";
   exit(1);
+}
+
+
+char* findINI(int argc, char** argv) {
+  while (argc > 1) {
+    // Process initial command-line options (beginning with "-"),
+    // but find only path to configuration file
+    char* const opt = argv[1];
+    if (opt[0] != '-') break; // the remaining parameters are assumed to be "rtsp://" URLs
+
+    switch (opt[1]) {
+    case 'c': { // path to configuration file
+      if (argc < 3) {
+        usage();
+        return NULL;
+      }
+      return argv[2];
+    }
+
+    default: {
+      break;
+    }
+    }
+
+    ++argv; --argc;
+  }
+
+  return NULL;
+}
+
+
+bool loadINI(const char* inifile) {
+  INIReader reader(inifile);
+  if (reader.ParseError() < 0) {
+    return false;
+  }
+
+  // Global configuration variables
+  verbosityLevel = reader.GetInteger("general", "verbosity", verbosityLevel);
+  streamRTPOverTCP = reader.GetBoolean("general", "stream_rtp_over_tcp", streamRTPOverTCP);
+  rtspServerPortNum = reader.GetInteger("general", "rtsp_server_port", rtspServerPortNum);
+  proxyREGISTERRequests = reader.GetBoolean("general", "register_requests", proxyREGISTERRequests);
+  usernameForREGISTER = reader.Get("general", "username_for_register", usernameForREGISTER);
+  passwordForREGISTER = reader.Get("general", "password_for_register", passwordForREGISTER);
+
+  // Variables that affects only current streams
+  std::string streamUsername = reader.Get("streamparams", "username", "");
+  std::string streamPassword = reader.Get("streamparams", "password", "");
+  portNumBits streamTunnelOverHTTPPortNum =
+    (portNumBits) reader.GetInteger("streamparams", "tunnel_over_http_port", 0);
+
+  // Parse proxied streams from "streams" section
+  std::string urls = reader.Get("streams", "url", "");
+  std::string names = reader.Get("streams", "name", "");
+  std::stringstream ss1(urls);
+  std::stringstream ss2(names);
+  std::string url;
+  std::string streamName;
+
+  while (std::getline(ss1, url, '\n') && std::getline(ss2, streamName, '\n')) {
+    // Ensure that there are no collision with previous streams
+    if (std::find(streamNames.begin(), streamNames.end(), streamName) != streamNames.end()) {
+      *env << "Conflict: stream name " << streamName.c_str() << " is already used\n";
+      return false;
+    }
+
+    ProxyStream stream;
+    stream.proxiedURL = url;
+    stream.streamName = streamName;
+    stream.username = streamUsername;
+    stream.password = streamPassword;
+    stream.tunnelOverHTTPPortNum = streamTunnelOverHTTPPortNum;
+    streams.push_back(stream);
+    streamNames.push_back(streamName);
+  }
+
+  return true;
 }
 
 
@@ -87,6 +169,11 @@ int parseArgs(int argc, char** argv) {
     if (opt[0] != '-') break; // the remaining parameters are assumed to be "rtsp://" URLs
 
     switch (opt[1]) {
+    case 'c': { // already parsed by findINI function; just skip it
+      ++pos;
+      break;
+    }
+
     case 'v': { // verbose output
       verbosityLevel = 1;
       break;
@@ -185,7 +272,7 @@ bool parseURLs(int argc, char** argv, int urlsStartPos) {
 
     std::string cppStreamName(streamName);
 
-    // Ensure that there are no collisions (will be needed later)
+    // Ensure that there are no collisions with streams from config files
     if (std::find(streamNames.begin(), streamNames.end(), cppStreamName) != streamNames.end()) {
       *env << "Conflict: stream name " << streamName << " is already used\n";
       return false;
@@ -226,7 +313,16 @@ int main(int argc, char** argv) {
   progName = argv[0];
   if (argc < 2) usage();
 
-  // Parse command line arguments
+  // Config file has low priority, so it should be loaded first
+  char *inifile = findINI(argc, argv);
+  if (inifile != NULL) {
+    if (!loadINI(inifile)) {
+      *env << "Cannot parse config files\n";
+      return 1;
+    }
+  }
+
+  // Command line parameters have high priority, parse it after config file
   int urlsStartPos = parseArgs(argc, argv);
   if (urlsStartPos < 1) {
     usage();
@@ -249,20 +345,21 @@ int main(int argc, char** argv) {
       *env << "Invalid URL " << (*it).proxiedURL.c_str();
       return 1;
     }
+
+    if (streamRTPOverTCP) {
+      if ((*it).tunnelOverHTTPPortNum > 0) {
+        *env << "Invalid configuration for " << (*it).proxiedURL.c_str() << ": the -t and -T options cannot both be used!\n";
+        return 1;
+      } else {
+        (*it).tunnelOverHTTPPortNum = (portNumBits)(~0); // hack to tell "ProxyServerMediaSession" to stream over TCP, but not using HTTP
+      }
+    }
   }
 
   // Do some additional checking for invalid command-line argument combinations:
   if (authDBForREGISTER != NULL && !proxyREGISTERRequests) {
     *env << "The '-U <username> <password>' option can be used only with -R\n";
     usage();
-  }
-  if (streamRTPOverTCP) {
-    if (tunnelOverHTTPPortNum > 0) {
-      *env << "The -t and -T options cannot both be used!\n";
-      usage();
-    } else {
-      tunnelOverHTTPPortNum = (portNumBits)(~0); // hack to tell "ProxyServerMediaSession" to stream over TCP, but not using HTTP
-    }
   }
 
 #ifdef ACCESS_CONTROL
