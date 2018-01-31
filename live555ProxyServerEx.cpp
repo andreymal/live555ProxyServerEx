@@ -58,26 +58,13 @@ void usage() {
   exit(1);
 }
 
-int main(int argc, char** argv) {
-  // Increase the maximum size of video frames that we can 'proxy' without truncation.
-  // (Such frames are unreasonably large; the back-end servers should really not be sending frames this large!)
-  OutPacketBuffer::maxSize = 100000; // bytes
 
-  // Begin by setting up our usage environment:
-  TaskScheduler* scheduler = BasicTaskScheduler::createNew();
-  env = BasicUsageEnvironment::createNew(*scheduler);
+int parseArgs(int argc, char** argv) {
+  int pos = 1;
 
-  *env << "LIVE555 Proxy Server Ex\n"
-       << "\t(LIVE555 Streaming Media library version "
-       << LIVEMEDIA_LIBRARY_VERSION_STRING
-       << "; licensed under the GNU LGPL)\n\n";
-
-  // Check command-line arguments: optional parameters, then one or more rtsp:// URLs (of streams to be proxied):
-  progName = argv[0];
-  if (argc < 2) usage();
-  while (argc > 1) {
+  while (pos < argc) {
     // Process initial command-line options (beginning with "-"):
-    char* const opt = argv[1];
+    char* const opt = argv[pos];
     if (opt[0] != '-') break; // the remaining parameters are assumed to be "rtsp://" URLs
 
     switch (opt[1]) {
@@ -100,27 +87,26 @@ int main(int argc, char** argv) {
 
     case 'T': {
       // stream RTP and RTCP over a HTTP connection
-      if (argc > 2 && argv[2][0] != '-') {
-	// The next argument is the HTTP server port number:                                                                       
-	if (sscanf(argv[2], "%hu", &tunnelOverHTTPPortNum) == 1
-	    && tunnelOverHTTPPortNum > 0) {
-	  ++argv; --argc;
-	  break;
-	}
+      if (pos + 1 < argc && argv[pos + 1][0] != '-') {
+        // The next argument is the HTTP server port number:
+        if (sscanf(argv[pos + 1], "%hu", &tunnelOverHTTPPortNum) == 1
+            && tunnelOverHTTPPortNum > 0) {
+          ++pos;
+          break;
+        }
       }
 
       // If we get here, the option was specified incorrectly:
-      usage();
-      break;
+      return -1;
     }
 
     case 'p': {
       // specify a rtsp server port number 
-      if (argc > 2 && argv[2][0] != '-') {
+      if (pos + 1 < argc && argv[pos + 1][0] != '-') {
         // The next argument is the rtsp server port number:
-        if (sscanf(argv[2], "%hu", &rtspServerPortNum) == 1
+        if (sscanf(argv[pos + 1], "%hu", &rtspServerPortNum) == 1
             && rtspServerPortNum > 0) {
-          ++argv; --argc;
+          ++pos;
           break;
         }
       }
@@ -131,21 +117,21 @@ int main(int argc, char** argv) {
     }
     
     case 'u': { // specify a username and password (to be used if the 'back end' (i.e., proxied) stream requires authentication)
-      if (argc < 4) usage(); // there's no argv[3] (for the "password")
-      username = argv[2];
-      password = argv[3];
-      argv += 2; argc -= 2;
+      if (pos + 2 >= argc) return -1; // there's no argv[pos + 2] (for the "password")
+      username = argv[pos + 1];
+      password = argv[pos + 2];
+      pos += 2;
       break;
     }
 
     case 'U': { // specify a username and password to use to authenticate incoming "REGISTER" commands
-      if (argc < 4) usage(); // there's no argv[3] (for the "password")
-      usernameForREGISTER = argv[2];
-      passwordForREGISTER = argv[3];
+      if (pos + 2 >= argc) return -1; // there's no argv[pos + 2] (for the "password")
+      usernameForREGISTER = argv[pos + 1];
+      passwordForREGISTER = argv[pos + 2];
 
       if (authDBForREGISTER == NULL) authDBForREGISTER = new UserAuthenticationDatabase;
       authDBForREGISTER->addUserRecord(usernameForREGISTER, passwordForREGISTER);
-      argv += 2; argc -= 2;
+      pos += 2;
       break;
     }
 
@@ -155,14 +141,46 @@ int main(int argc, char** argv) {
     }
 
     default: {
-      usage();
-      break;
+      return -1;
     }
     }
 
-    ++argv; --argc;
+    ++pos;
   }
-  if (argc < 2 && !proxyREGISTERRequests) usage(); // there must be at least one "rtsp://" URL at the end 
+
+  return pos;
+}
+
+
+int main(int argc, char** argv) {
+  // Increase the maximum size of video frames that we can 'proxy' without truncation.
+  // (Such frames are unreasonably large; the back-end servers should really not be sending frames this large!)
+  OutPacketBuffer::maxSize = 100000; // bytes
+
+  // Begin by setting up our usage environment:
+  TaskScheduler* scheduler = BasicTaskScheduler::createNew();
+  env = BasicUsageEnvironment::createNew(*scheduler);
+
+  *env << "LIVE555 Proxy Server Ex\n"
+       << "\t(LIVE555 Streaming Media library version "
+       << LIVEMEDIA_LIBRARY_VERSION_STRING
+       << "; licensed under the GNU LGPL)\n\n";
+
+  // Check command-line arguments: optional parameters, then one or more rtsp:// URLs (of streams to be proxied):
+  progName = argv[0];
+  if (argc < 2) usage();
+
+  // Parse command line arguments
+  int urlsStartPos = parseArgs(argc, argv);
+  if (urlsStartPos < 1) {
+    usage();
+  }
+
+  if (urlsStartPos == argc && !proxyREGISTERRequests) usage(); // there must be at least one "rtsp://" URL at the end
+
+  argc += (urlsStartPos - 1);
+  argv += (urlsStartPos - 1);
+
   // Make sure that the remaining arguments appear to be "rtsp://" URLs:
   int i;
   for (i = 1; i < argc; ++i) {
