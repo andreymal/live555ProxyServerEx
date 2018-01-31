@@ -20,13 +20,27 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 // LIVE555 Proxy Server Ex
 // main program
 
+#include <string>
+#include <vector>
+#include <algorithm>
 #include "liveMedia.hh"
 #include "BasicUsageEnvironment.hh"
+
+struct ProxyStream {
+  std::string proxiedURL;
+  std::string streamName;
+  std::string username;
+  std::string password;
+  portNumBits tunnelOverHTTPPortNum;
+};
 
 char const* progName;
 UsageEnvironment* env;
 UserAuthenticationDatabase* authDB = NULL;
 UserAuthenticationDatabase* authDBForREGISTER = NULL;
+
+std::vector<ProxyStream> streams;
+std::vector<std::string> streamNames; // for collision detection
 
 // Default values of command-line parameters:
 int verbosityLevel = 0;
@@ -152,6 +166,43 @@ int parseArgs(int argc, char** argv) {
 }
 
 
+bool parseURLs(int argc, char** argv, int urlsStartPos) {
+  int i = 1;
+
+  while (urlsStartPos < argc) {
+    char streamName[127];
+
+    if (i == 1 && urlsStartPos == argc - 1) {
+      sprintf(streamName, "%s", "proxyStream"); // there's just one stream; give it this name
+    } else {
+      sprintf(streamName, "proxyStream-%d", i); // there's more than one stream; distinguish them by name
+    }
+
+    std::string cppStreamName(streamName);
+
+    // Ensure that there are no collisions (will be needed later)
+    if (std::find(streamNames.begin(), streamNames.end(), cppStreamName) != streamNames.end()) {
+      *env << "Conflict: stream name " << streamName << " is already used\n";
+      return false;
+    }
+
+    ProxyStream stream;
+    stream.proxiedURL = std::string(argv[urlsStartPos]);
+    stream.streamName = cppStreamName;
+    stream.username = std::string(username != NULL ? username : "");
+    stream.password = std::string(password != NULL ? password : "");
+    stream.tunnelOverHTTPPortNum = tunnelOverHTTPPortNum;
+    streams.push_back(stream);
+    streamNames.push_back(cppStreamName);
+
+    ++urlsStartPos;
+    ++i;
+  }
+
+  return true;
+}
+
+
 int main(int argc, char** argv) {
   // Increase the maximum size of video frames that we can 'proxy' without truncation.
   // (Such frames are unreasonably large; the back-end servers should really not be sending frames this large!)
@@ -176,16 +227,25 @@ int main(int argc, char** argv) {
     usage();
   }
 
-  if (urlsStartPos == argc && !proxyREGISTERRequests) usage(); // there must be at least one "rtsp://" URL at the end
+  // Parse URLs from command line arguments
+  if (!parseURLs(argc, argv, urlsStartPos)) {
+    return 1;
+  }
 
-  argc += (urlsStartPos - 1);
-  argv += (urlsStartPos - 1);
+  if (streams.size() < 1 && !proxyREGISTERRequests) {
+    usage();
+  }
+
+  std::vector<ProxyStream>::iterator it;
 
   // Make sure that the remaining arguments appear to be "rtsp://" URLs:
-  int i;
-  for (i = 1; i < argc; ++i) {
-    if (strncmp(argv[i], "rtsp://", 7) != 0) usage();
+  for(it = streams.begin(); it != streams.end(); ++it) {
+    if ((*it).proxiedURL.find("rtsp://") != 0) {
+      *env << "Invalid URL " << (*it).proxiedURL.c_str();
+      return 1;
+    }
   }
+
   // Do some additional checking for invalid command-line argument combinations:
   if (authDBForREGISTER != NULL && !proxyREGISTERRequests) {
     *env << "The '-U <username> <password>' option can be used only with -R\n";
@@ -231,22 +291,18 @@ int main(int argc, char** argv) {
   }
 
   // Create a proxy for each "rtsp://" URL specified on the command line:
-  for (i = 1; i < argc; ++i) {
-    char const* proxiedStreamURL = argv[i];
-    char streamName[30];
-    if (argc == 2) {
-      sprintf(streamName, "%s", "proxyStream"); // there's just one stream; give it this name
-    } else {
-      sprintf(streamName, "proxyStream-%d", i); // there's more than one stream; distinguish them by name
-    }
+  for(it = streams.begin(); it != streams.end(); ++it) {
     ServerMediaSession* sms
       = ProxyServerMediaSession::createNew(*env, rtspServer,
-					   proxiedStreamURL, streamName,
-					   username, password, tunnelOverHTTPPortNum, verbosityLevel);
+          (*it).proxiedURL.c_str(),
+          (*it).streamName.c_str(),
+          (*it).username.length() > 0 ? (*it).username.c_str() : NULL,
+          (*it).password.length() > 0 ? (*it).password.c_str() : NULL,
+          (*it).tunnelOverHTTPPortNum, verbosityLevel);
     rtspServer->addServerMediaSession(sms);
 
     char* proxyStreamURL = rtspServer->rtspURL(sms);
-    *env << "RTSP stream, proxying the stream \"" << proxiedStreamURL << "\"\n";
+    *env << "RTSP stream, proxying the stream \"" << (*it).proxiedURL.c_str() << "\"\n";
     *env << "\tPlay this stream using the URL: " << proxyStreamURL << "\n";
     delete[] proxyStreamURL;
   }
