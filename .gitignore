@@ -1,0 +1,5 @@
+Makefile
+*.o
+*.exe
+live555ProxyServerEx
+config.*
