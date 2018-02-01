@@ -57,6 +57,7 @@ std::string usernameForREGISTER;
 std::string passwordForREGISTER;
 std::string singleStreamNameTemplate("proxyStream");
 std::string multipleStreamNameTemplate("proxyStream-%d");
+unsigned outPacketMaxSize = 2000000;  // bytes
 
 // Configuration for command-line streams
 std::string username;
@@ -156,6 +157,15 @@ bool loadINIFile(const char* inifile) {
   singleStreamNameTemplate = reader.Get("general", "single_stream_name", singleStreamNameTemplate);
   // TODO: %d should be validated here
   multipleStreamNameTemplate = reader.Get("general", "multiple_stream_name", multipleStreamNameTemplate);
+
+  int outPacketMaxSizeTmp = reader.GetInteger("general", "out_packet_max_size", 0);
+  if (outPacketMaxSizeTmp < 0) {
+    *env << "Invalid out_packet_max_size\n";
+    return false;
+  }
+  if (outPacketMaxSizeTmp > 0) {
+    outPacketMaxSize = outPacketMaxSizeTmp;
+  }
 
   // Variables that affects only current streams
   std::string streamUsername = reader.Get("streamparams", "username", "");
@@ -360,9 +370,6 @@ bool parseURLs(int argc, char** argv, int urlsStartPos) {
 
 
 int main(int argc, char** argv) {
-  // Increase the maximum size of video frames that we can 'proxy' without truncation.
-  // (Such frames are unreasonably large; the back-end servers should really not be sending frames this large!)
-  OutPacketBuffer::maxSize = 100000; // bytes
 
   // Begin by setting up our usage environment:
   TaskScheduler* scheduler = BasicTaskScheduler::createNew();
@@ -425,6 +432,10 @@ int main(int argc, char** argv) {
     *env << "The '-U <username> <password>' option can be used only with -R\n";
     usage();
   }
+
+  // This option allows to increase the maximum size of video frames that we can 'proxy' without truncation.
+  // (Such frames are unreasonably large; the back-end servers should really not be sending frames this large!)
+  OutPacketBuffer::maxSize = outPacketMaxSize; // bytes
 
   // Create the RTSP server. Try first with the configured port number,
   // and then with the default port number (554) if different,
