@@ -95,27 +95,51 @@ void usage() {
 
 
 char* findConfigPath(int argc, char** argv) {
-  while (argc > 1) {
+  int pos = 1;
+
+  while (pos < argc) {
     // Process initial command-line options (beginning with "-"),
     // but find only path to configuration file
-    char* const opt = argv[1];
+    char* const opt = argv[pos];
     if (opt[0] != '-') break; // the remaining parameters are assumed to be "rtsp://" URLs
 
     switch (opt[1]) {
     case 'c': { // path to configuration file
-      if (argc < 3) {
+      if (pos + 1 >= argc) {
         usage();
         return NULL;
       }
-      return argv[2];
+      return argv[pos + 1];
     }
 
+    // Skip options that use few command-line arguments
+    case 'T': {
+      ++pos;
+      break;
+    }
+
+    case 'p': {
+      ++pos;
+      break;
+    }
+
+    case 'u': {
+      pos += 2;
+      break;
+    }
+
+    case 'U': {
+      pos += 2;
+      break;
+    }
+
+    // Skip any other options
     default: {
       break;
     }
     }
 
-    ++argv; --argc;
+    ++pos;
   }
 
   return NULL;
@@ -281,7 +305,7 @@ int parseArgs(int argc, char** argv) {
     }
 
     case 'p': {
-      // specify a rtsp server port number 
+      // specify a rtsp server port number
       if (pos + 1 < argc && argv[pos + 1][0] != '-') {
         // The next argument is the rtsp server port number:
         if (sscanf(argv[pos + 1], "%hu", &rtspServerPortNum) == 1
@@ -295,7 +319,7 @@ int parseArgs(int argc, char** argv) {
       usage();
       break;
     }
-    
+
     case 'u': { // specify a username and password (to be used if the 'back end' (i.e., proxied) stream requires authentication)
       if (pos + 2 >= argc) return -1; // there's no argv[pos + 2] (for the "password")
       username = std::string(argv[pos + 1]);
@@ -413,7 +437,7 @@ int main(int argc, char** argv) {
   // Make sure that the remaining arguments appear to be "rtsp://" URLs:
   for(it = streams.begin(); it != streams.end(); ++it) {
     if ((*it).proxiedURL.find("rtsp://") != 0) {
-      *env << "Invalid URL " << (*it).proxiedURL.c_str();
+      *env << "Invalid URL " << (*it).proxiedURL.c_str() << "\n";
       return 1;
     }
 
@@ -482,7 +506,6 @@ int main(int argc, char** argv) {
   // Also, attempt to create a HTTP server for RTSP-over-HTTP tunneling.
   // Try first with the default HTTP port (80), and then with the alternative HTTP
   // port numbers (8000 and 8080).
-
   if (serverTunnelingOverHTTP) {
     Boolean success;
 
