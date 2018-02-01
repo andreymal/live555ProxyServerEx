@@ -48,10 +48,15 @@ std::vector<std::string> streamNames; // for collision detection
 // Global configuration
 int verbosityLevel = 0;
 Boolean streamRTPOverTCP = False;
+Boolean tryStandardPortNumbers = True;
+Boolean serverTunnelingOverHTTP = True;
+portNumBits serverTunnelingOverHTTPPortNum = 0; // It tries 80, 8000 or 8080 by default
 portNumBits rtspServerPortNum = 554;
 Boolean proxyREGISTERRequests = False;
 std::string usernameForREGISTER;
 std::string passwordForREGISTER;
+std::string singleStreamNameTemplate("proxyStream");
+std::string multipleStreamNameTemplate("proxyStream-%d");
 
 // Configuration for command-line streams
 std::string username;
@@ -141,10 +146,16 @@ bool loadINIFile(const char* inifile) {
   // Global configuration variables
   verbosityLevel = reader.GetInteger("general", "verbosity", verbosityLevel);
   streamRTPOverTCP = reader.GetBoolean("general", "stream_rtp_over_tcp", streamRTPOverTCP);
+  tryStandardPortNumbers = reader.GetBoolean("general", "try_standard_port_numbers", tryStandardPortNumbers);
+  serverTunnelingOverHTTP = reader.GetBoolean("general", "server_tunneling_over_http", serverTunnelingOverHTTP);
+  serverTunnelingOverHTTPPortNum = reader.GetInteger("general", "server_tunneling_over_http_port", serverTunnelingOverHTTPPortNum);
   rtspServerPortNum = reader.GetInteger("general", "rtsp_server_port", rtspServerPortNum);
   proxyREGISTERRequests = reader.GetBoolean("general", "register_requests", proxyREGISTERRequests);
   usernameForREGISTER = reader.Get("general", "username_for_register", usernameForREGISTER);
   passwordForREGISTER = reader.Get("general", "password_for_register", passwordForREGISTER);
+  singleStreamNameTemplate = reader.Get("general", "single_stream_name", singleStreamNameTemplate);
+  // TODO: %d should be validated here
+  multipleStreamNameTemplate = reader.Get("general", "multiple_stream_name", multipleStreamNameTemplate);
 
   // Variables that affects only current streams
   std::string streamUsername = reader.Get("streamparams", "username", "");
@@ -301,9 +312,9 @@ bool parseURLs(int argc, char** argv, int urlsStartPos) {
     char streamName[127];
 
     if (i == 1 && urlsStartPos == argc - 1) {
-      sprintf(streamName, "%s", "proxyStream"); // there's just one stream; give it this name
+      sprintf(streamName, "%s", singleStreamNameTemplate.c_str()); // there's just one stream; give it this name
     } else {
-      sprintf(streamName, "proxyStream-%d", i); // there's more than one stream; distinguish them by name
+      sprintf(streamName, multipleStreamNameTemplate.c_str(), i); // there's more than one stream; distinguish them by name
     }
 
     std::string cppStreamName(streamName);
@@ -410,16 +421,14 @@ int main(int argc, char** argv) {
   // and then with the alternative port number (8554):
   RTSPServer* rtspServer;
   rtspServer = createRTSPServer(rtspServerPortNum);
-  if (rtspServer == NULL) {
-    if (rtspServerPortNum != 554) {
-      *env << "Unable to create a RTSP server with port number " << rtspServerPortNum << ": " << env->getResultMsg() << "\n";
-      *env << "Trying instead with the standard port numbers (554 and 8554)...\n";
+  if (rtspServer == NULL && tryStandardPortNumbers && rtspServerPortNum != 554) {
+    *env << "Unable to create a RTSP server with port number " << rtspServerPortNum << ": " << env->getResultMsg() << "\n";
+    *env << "Trying instead with the standard port numbers (554 and 8554)...\n";
 
-      rtspServerPortNum = 554;
-      rtspServer = createRTSPServer(rtspServerPortNum);
-    }
+    rtspServerPortNum = 554;
+    rtspServer = createRTSPServer(rtspServerPortNum);
   }
-  if (rtspServer == NULL) {
+  if (rtspServer == NULL && tryStandardPortNumbers) {
     rtspServerPortNum = 8554;
     rtspServer = createRTSPServer(rtspServerPortNum);
   }
@@ -453,10 +462,22 @@ int main(int argc, char** argv) {
   // Try first with the default HTTP port (80), and then with the alternative HTTP
   // port numbers (8000 and 8080).
 
-  if (rtspServer->setUpTunnelingOverHTTP(80) || rtspServer->setUpTunnelingOverHTTP(8000) || rtspServer->setUpTunnelingOverHTTP(8080)) {
-    *env << "\n(We use port " << rtspServer->httpServerPortNum() << " for optional RTSP-over-HTTP tunneling.)\n";
+  if (serverTunnelingOverHTTP) {
+    Boolean success;
+
+    if (serverTunnelingOverHTTPPortNum == 0) {
+      success = (rtspServer->setUpTunnelingOverHTTP(80) || rtspServer->setUpTunnelingOverHTTP(8000) || rtspServer->setUpTunnelingOverHTTP(8080));
+    } else {
+      success = rtspServer->setUpTunnelingOverHTTP(serverTunnelingOverHTTPPortNum);
+    }
+
+    if (success) {
+      *env << "\n(We use port " << rtspServer->httpServerPortNum() << " for optional RTSP-over-HTTP tunneling.)\n";
+    } else {
+      *env << "\n(RTSP-over-HTTP tunneling is not available.)\n";
+    }
   } else {
-    *env << "\n(RTSP-over-HTTP tunneling is not available.)\n";
+    *env << "\n(RTSP-over-HTTP tunneling is disabled.)\n";
   }
 
   // Now, enter the event loop:
