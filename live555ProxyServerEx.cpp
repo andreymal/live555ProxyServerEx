@@ -188,6 +188,23 @@ bool loadINIFile(const char* inifile) {
     streamNames.push_back(streamName);
   }
 
+  // Client access control to the RTSP server
+  std::string usernames = reader.Get("auth", "username", "");
+  std::string passwords = reader.Get("auth", "password", "");
+  std::stringstream ss3(usernames);
+  std::stringstream ss4(passwords);
+  std::string authUsername;
+  std::string authPassword;
+
+  while (std::getline(ss3, authUsername, '\n') && std::getline(ss4, authPassword, '\n')) {
+    if (authUsername.length() > 0 && authPassword.length() > 0) {
+      if (authDB == NULL) {
+        authDB = new UserAuthenticationDatabase;
+      }
+      authDB->addUserRecord(authUsername.c_str(), authPassword.c_str());
+    }
+  }
+
   // Get list of config files for recursive loading
   std::string includes = reader.Get("include", "path", "");
 
@@ -408,13 +425,6 @@ int main(int argc, char** argv) {
     *env << "The '-U <username> <password>' option can be used only with -R\n";
     usage();
   }
-
-#ifdef ACCESS_CONTROL
-  // To implement client access control to the RTSP server, do the following:
-  authDB = new UserAuthenticationDatabase;
-  authDB->addUserRecord("username1", "password1"); // replace these with real strings
-      // Repeat this line with each <username>, <password> that you wish to allow access to the server.
-#endif
 
   // Create the RTSP server. Try first with the configured port number,
   // and then with the default port number (554) if different,
