@@ -24,6 +24,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <sys/stat.h>
 #include "liveMedia.hh"
 #include "BasicUsageEnvironment.hh"
 #include "inih/INIReader.hh"
@@ -58,6 +59,10 @@ std::string password;
 portNumBits tunnelOverHTTPPortNum = 0;
 
 
+bool includeConfig(const char* path);
+bool loadINIFile(const char* inifile);
+
+
 static RTSPServer* createRTSPServer(Port port) {
   if (proxyREGISTERRequests) {
     return RTSPServerWithREGISTERProxying::createNew(
@@ -83,7 +88,7 @@ void usage() {
 }
 
 
-char* findINI(int argc, char** argv) {
+char* findConfigPath(int argc, char** argv) {
   while (argc > 1) {
     // Process initial command-line options (beginning with "-"),
     // but find only path to configuration file
@@ -111,9 +116,25 @@ char* findINI(int argc, char** argv) {
 }
 
 
-bool loadINI(const char* inifile) {
+bool includeConfig(const char* path) {
+  struct stat st;
+  if (stat(path, &st) != 0) {
+    *env << "Path \"" << path << "\" not found\n";
+    return false;
+  }
+
+  if (S_ISDIR(st.st_mode)) {
+    *env << "Config directories are not supported\n";
+    return false;
+  }
+
+  return loadINIFile(path);
+}
+
+
+bool loadINIFile(const char* inifile) {
   INIReader reader(inifile);
-  if (reader.ParseError() < 0) {
+  if (reader.ParseError() != 0) {
     return false;
   }
 
@@ -156,6 +177,21 @@ bool loadINI(const char* inifile) {
     streamNames.push_back(streamName);
   }
 
+  // Get list of config files for recursive loading
+  std::string includes = reader.Get("include", "path", "");
+
+  std::stringstream ss(includes);
+  std::string nextinifile;
+
+  // TODO: prevent infinite recursion
+  while(std::getline(ss, nextinifile, '\n')){
+    if (nextinifile.length() > 0) {
+      if (!includeConfig(nextinifile.c_str())) {
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -169,7 +205,7 @@ int parseArgs(int argc, char** argv) {
     if (opt[0] != '-') break; // the remaining parameters are assumed to be "rtsp://" URLs
 
     switch (opt[1]) {
-    case 'c': { // already parsed by findINI function; just skip it
+    case 'c': { // already parsed by findConfigPath function; just skip it
       ++pos;
       break;
     }
@@ -314,9 +350,9 @@ int main(int argc, char** argv) {
   if (argc < 2) usage();
 
   // Config file has low priority, so it should be loaded first
-  char *inifile = findINI(argc, argv);
+  char *inifile = findConfigPath(argc, argv);
   if (inifile != NULL) {
-    if (!loadINI(inifile)) {
+    if (!includeConfig(inifile)) {
       *env << "Cannot parse config files\n";
       return 1;
     }
