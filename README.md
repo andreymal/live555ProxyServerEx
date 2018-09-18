@@ -26,17 +26,31 @@ For more information see [the official documentation](http://www.live555.com/pro
 
 (only `linux-64bit` is supported now)
 
-- Install latest version of vanilla LIVE555 (`livemedia-utils` package
-  in Debian/Ubuntu, `live-media` in Arch Linux; version `2018.01.29` was
-  tested). Development files (e.g. `/usr/include/liveMedia` or
-  `/usr/local/include/liveMedia`; `liblivemedia-dev` package in Debian/Ubuntu)
-  should be also available
+- Install latest version of vanilla LIVE555:
+
+    - Debian/Ubuntu: `sudo apt-get install livemedia-utils liblivemedia-dev`
+    - Arch Linux: `sudo pacman -S live-media`
+    - from source (`2018.09.10` was tested):
+      - build using the official documentation:
+        http://www.live555.com/liveMedia/#config-unix
+      - install `*.a` libraries using `sudo make install` (you can put custom
+        `DESTDIR` in your live555 config file (not proxy config file!) or use
+        something like `checkinstall`)
+      - put `LIBRARIES_DIR = /usr/local/lib` to your config file
+      - use `LIB_SUFFIX = a` in your config file
+
+  Make sure the development files (e.g. `/usr/include/liveMedia` or
+  `/usr/local/include/liveMedia`) are available
 
 - Copy `config-example.linux-64bit` to `config.linux-64bit` and edit it. You
   may want to replace `LIBRARIES_DIR` and `INCLUDES_PREFIX` or change
-  the compiler
+  the compiler (see also example for Ubuntu 18.04 with gcc:
+  `config-example-ubuntu.linux-64bit`)
 
-- Generate Makefile using `./genMakefiles`
+    - Use `LIB_SUFFIX = a` for static linking
+    - Use `LIB_SUFFIX = so` for dynamic linking
+
+- Generate Makefile using `./genMakefiles linux-64bit`
 
 - `make`
 
@@ -77,7 +91,7 @@ option. It has INI format.
   (default `proxyStream`);
 
 - `multiple_stream_name`: names of the streams if there are multiple proxied
-  URLs, must have `%d` for stream number (default `proxyStream-%d`)
+  URLs, must have `%d` for stream number (default `proxyStream-%d`);
 
 - `out_packet_max_size` (unsigned integer): changes
   `OutPacketBuffer::maxSize` value. If you see something like
@@ -102,7 +116,6 @@ and stream name. Example:
     url = rtsp://192.168.69.100:554/onvif1
     name = office
 
-    [streams]
     url = rtsp://10.0.2.66:38888/h264_ulaw.sdp
     name = android_ipwebcam
 
