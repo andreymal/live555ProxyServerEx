@@ -1,0 +1,20 @@
+# Ubuntu 18.04 example config (dynamic linking)
+# sudo apt-get install build-essential livemedia-utils liblivemedia-dev
+
+LIBRARIES_DIR   =   /usr/lib/x86_64-linux-gnu/
+INCLUDES_PREFIX =   /usr/include
+INCLUDES = -I$(INCLUDES_PREFIX)/UsageEnvironment -I$(INCLUDES_PREFIX)/groupsock -I$(INCLUDES_PREFIX)/liveMedia -I$(INCLUDES_PREFIX)/BasicUsageEnvironment
+COMPILE_OPTS =		$(INCLUDES) -m64  -fPIC -I. -O2 -DSOCKLEN_T=socklen_t -D_LARGEFILE_SOURCE=1 -D_FILE_OFFSET_BITS=64
+C =			c
+C_COMPILER =		gcc
+C_FLAGS =		$(COMPILE_OPTS)
+CPP =			cpp
+CPLUSPLUS_COMPILER =	g++
+CPLUSPLUS_FLAGS =	$(COMPILE_OPTS) -Wall -Wno-deprecated -DBSD=1
+OBJ =			o
+LINK =			g++ -o
+LINK_OPTS =		-L.
+CONSOLE_LINK_OPTS =	$(LINK_OPTS)
+LIB_SUFFIX =		so
+EXE =
+DESTDIR =
