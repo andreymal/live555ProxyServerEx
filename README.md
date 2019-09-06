@@ -103,10 +103,10 @@ option. It has INI format.
 then proxy server will require authentication. Example:
 
     [auth]
-    user = admin
+    username = admin
     password = 123456
 
-    user = alice
+    username = alice
     password = 777bob777
 
 `[streams]` section is a list of proxied streams. Every stream must have URL
